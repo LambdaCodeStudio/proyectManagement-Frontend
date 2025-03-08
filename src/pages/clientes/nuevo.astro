@@ -1,0 +1,12 @@
+---
+import Layout from '../../layouts/main/Layout.astro';
+import { ClientForm } from '../../components/ClientForm';
+
+// Obtener posibles parámetros de consulta para edición
+const { searchParams } = Astro.url;
+const id = searchParams.get('id');
+---
+
+<Layout title={id ? "Editar Cliente" : "Nuevo Cliente"}>
+  <ClientForm id={id || undefined} client:load />
+</Layout>

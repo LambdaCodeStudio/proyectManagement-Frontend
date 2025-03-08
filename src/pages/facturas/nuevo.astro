@@ -1,0 +1,17 @@
+---
+import Layout from '../../layouts/main/Layout.astro';
+import { InvoiceForm } from '../../components/InvoiceForm';
+
+// Obtener posibles parámetros de consulta para edición o proyecto
+const { searchParams } = Astro.url;
+const id = searchParams.get('id');
+const projectId = searchParams.get('projectId');
+---
+
+<Layout title={id ? "Editar Factura" : "Nueva Factura"}>
+  <InvoiceForm 
+    id={id || undefined} 
+    projectId={projectId || undefined} 
+    client:load 
+  />
+</Layout>

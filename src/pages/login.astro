@@ -1,0 +1,19 @@
+---
+import Layout from '../layouts/main/Layout.astro';
+import { LoginForm } from '../components/auth/LoginForm';
+---
+
+<Layout title="Login" showNavbar={false}>
+  <main class="min-h-screen flex items-center justify-center py-12 px-4 sm:px-6 lg:px-8">
+    <div class="max-w-md w-full space-y-8">
+      <div class="text-center">
+        <h1 class="text-3xl font-extrabold text-gray-900">GestorPro</h1>
+        <h2 class="mt-6 text-xl font-bold text-gray-900">Iniciar Sesión</h2>
+        <p class="mt-2 text-sm text-gray-600">
+          Ingresa tus credenciales para acceder al sistema
+        </p>
+      </div>
+      <LoginForm client:load />
+    </div>
+  </main>
+</Layout>

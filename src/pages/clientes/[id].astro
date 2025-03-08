@@ -1,0 +1,11 @@
+---
+import Layout from '../../layouts/main/Layout.astro';
+import { ClientDetail } from '../../components/ClientDetail';
+
+// Obtener el ID del cliente desde los parámetros de ruta
+const { id } = Astro.params;
+---
+
+<Layout title="Detalle de Cliente">
+  <ClientDetail id={id} client:load />
+</Layout>
