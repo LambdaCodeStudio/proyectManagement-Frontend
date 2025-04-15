@@ -82,13 +82,27 @@ export const ClientForm = ({ id }: ClientFormProps) => {
     try {
       setSaving(true);
       
+      // Obtener token CSRF de la cookie
+      const csrfToken = document.cookie
+        .split('; ')
+        .find(row => row.startsWith('XSRF-TOKEN='))
+        ?.split('=')[1];
+      
+      console.log("Token CSRF usado:", csrfToken);
+      
+      // Opciones con el token explícito
+      const options = {
+        headers: {
+          'X-CSRF-Token': csrfToken
+        }
+      };
+      
       if (isEditing) {
-        await apiService.put(`/cliente/${id}`, formValues);
+        await apiService.put(`/cliente/${id}`, formValues, options);
       } else {
-        await apiService.post('/cliente', formValues);
+        await apiService.post('/cliente', formValues, options);
       }
       
-      // Navigate back to clients list
       window.location.href = '/clientes';
     } catch (err: any) {
       console.error('Error al guardar cliente:', err);
