@@ -43,7 +43,7 @@ export const Navbar = ({ currentPath = window.location.pathname }: NavbarProps) 
                 onClick={() => handleNavigation('/dashboard')} 
                 className="text-xl font-bold text-primary"
               >
-                GestorPro
+                Administrador de Proyectos
               </button>
             </div>
             
