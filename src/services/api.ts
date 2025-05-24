@@ -1,24 +1,4 @@
-import axios from 'axios';
-
-// Definir tipos localmente para evitar problemas de compatibilidad
-type ApiResponse<T = any> = {
-  data: T;
-  status: number;
-  statusText: string;
-  headers: Record<string, string>;
-  config: any;
-};
-
-type ApiError = {
-  response?: {
-    data?: any;
-    status?: number;
-    headers?: Record<string, string>;
-  };
-  request?: any;
-  message: string;
-  config?: any;
-};
+import axios, { AxiosError, AxiosRequestConfig, AxiosResponse } from 'axios';
 
 // Utilidades para cookies
 const getCookie = (name: string): string | undefined => {
@@ -81,7 +61,7 @@ api.interceptors.request.use((config) => {
 
 // Response interceptor mejorado
 api.interceptors.response.use(
-  (response) => {
+  (response: AxiosResponse) => {
     // Verificar token JWT renovado
     const newToken = response.headers['new-authorization'];
     if (newToken && typeof document !== 'undefined') {
@@ -106,10 +86,8 @@ api.interceptors.response.use(
     
     return response;
   },
-  async (error: ApiError) => {
-    // Si no hay configuración o no tiene _retry, inicializar
-    const originalRequest = error.config || {};
-    const _retry = (originalRequest as any)._retry;
+  async (error: AxiosError) => {
+    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
     
     // Manejar errores de red
     if (!error.response) {
@@ -127,16 +105,13 @@ api.interceptors.response.use(
     switch (error.response?.status) {
       case 401: // No autorizado
         // Solo intentar renovar token una vez
-        if (originalRequest && !_retry && typeof document !== 'undefined') {
-          // Marcar que ya intentamos con esta solicitud
-          (originalRequest as any)._retry = true;
-          
+        if (originalRequest && !originalRequest._retry && typeof document !== 'undefined') {
           // Limpiar credenciales en errores de autenticación
           document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT';
           
           // Actualizar CSRF token si es necesario
           try {
-            await api.get('/csrf-token');
+            await api.get('/api/csrf-token');
           } catch (e) {
             console.error('Error al obtener nuevo CSRF token:', e);
           }
@@ -158,11 +133,11 @@ api.interceptors.response.use(
           
           // Intentar obtener nuevo token CSRF
           try {
-            await api.get('/csrf-token');
+            await api.get('/api/csrf-token');
             
             // Volver a intentar la solicitud original con el nuevo token
-            if (originalRequest && !_retry) {
-              (originalRequest as any)._retry = true;
+            if (originalRequest && !originalRequest._retry) {
+              originalRequest._retry = true;
               const csrfToken = getCookie('XSRF-TOKEN');
               if (csrfToken && originalRequest.headers) {
                 originalRequest.headers['X-CSRF-Token'] = csrfToken;
@@ -211,7 +186,7 @@ api.interceptors.response.use(
 // Métodos extendidos para operaciones comunes
 const apiService = {
   // Método base para realizar solicitudes
-  request: async <T>(config: any): Promise<T> => {
+  request: async <T>(config: AxiosRequestConfig): Promise<T> => {
     try {
       const response = await api(config);
       return response.data;
@@ -221,9 +196,9 @@ const apiService = {
   },
   
   // GET con caché opcional
-  get: async <T>(url: string, params?: any, useCache: boolean = false): Promise<T> => {
+  get: async <T>(url: string, params?: object, useCache: boolean = false): Promise<T> => {
     try {
-      const config: any = { 
+      const config: AxiosRequestConfig = { 
         url, 
         method: 'GET',
         params
@@ -261,7 +236,7 @@ const apiService = {
   },
   
   // POST con manejo de errores mejorado
-  post: async <T>(url: string, data?: any, config?: any): Promise<T> => {
+  post: async <T>(url: string, data?: object, config?: AxiosRequestConfig): Promise<T> => {
     try {
       const response = await api.post(url, data, config);
       return response.data;
@@ -271,7 +246,7 @@ const apiService = {
   },
   
   // PUT
-  put: async <T>(url: string, data?: any, config?: any): Promise<T> => {
+  put: async <T>(url: string, data?: object, config?: AxiosRequestConfig): Promise<T> => {
     try {
       const response = await api.put(url, data, config);
       return response.data;
@@ -281,7 +256,7 @@ const apiService = {
   },
   
   // DELETE
-  delete: async <T>(url: string, config?: any): Promise<T> => {
+  delete: async <T>(url: string, config?: AxiosRequestConfig): Promise<T> => {
     try {
       const response = await api.delete(url, config);
       return response.data;
@@ -291,7 +266,7 @@ const apiService = {
   },
   
   // PATCH
-  patch: async <T>(url: string, data?: any, config?: any): Promise<T> => {
+  patch: async <T>(url: string, data?: object, config?: AxiosRequestConfig): Promise<T> => {
     try {
       const response = await api.patch(url, data, config);
       return response.data;
@@ -303,7 +278,7 @@ const apiService = {
   // Método para obtener un nuevo token CSRF
   refreshCsrfToken: async (): Promise<string> => {
     try {
-      const response = await api.get('/csrf-token');
+      const response = await api.get('/api/csrf-token');
       return response.data.csrfToken;
     } catch (error) {
       console.error('Error al obtener token CSRF:', error);
@@ -314,7 +289,7 @@ const apiService = {
   // Verificar conexión con el backend
   checkHealth: async (): Promise<boolean> => {
     try {
-      const response = await api.get('/health', {}, true);
+      const response = await api.get('/api/health', {}, true);
       return response.status === 'success';
     } catch (error) {
       console.error('Error en health check:', error);

@@ -1,0 +1,41 @@
+---
+import Layout from '../layouts/main/Layout.astro';
+---
+
+<Layout title="Pago Exitoso">
+  <main class="min-h-screen bg-gradient-to-br from-green-50 to-emerald-50 flex items-center justify-center p-4">
+    <div class="max-w-md w-full">
+      <div id="payment-result-container">
+        <div class="bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div class="animate-pulse">
+            <div class="h-16 w-16 bg-gray-200 rounded-full mx-auto mb-4"></div>
+            <div class="h-6 bg-gray-200 rounded w-3/4 mx-auto mb-2"></div>
+            <div class="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    import { PaymentResult } from '../components/payments/PaymentResult';
+    import { createRoot } from 'react-dom/client';
+    import React from 'react';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const container = document.getElementById('payment-result-container');
+      if (container) {
+        const root = createRoot(container);
+        
+        const urlParams = new URLSearchParams(window.location.search);
+        
+        root.render(React.createElement(PaymentResult, {
+          type: 'success',
+          externalReference: urlParams.get('external_reference'),
+          paymentId: urlParams.get('payment_id'),
+          status: urlParams.get('status')
+        }));
+      }
+    });
+  </script>
+</Layout>

@@ -1,16 +1,9 @@
 ---
-// Verificar si el usuario está autenticado y redirigir adecuadamente
-const isAuthenticated = false; // Esto debería venir de una comprobación real de token
+import Layout from '../layouts/Layout.astro';
 
-// Determinar a dónde redirigir basado en la autenticación
-const redirectTo = isAuthenticated ? '/dashboard' : '/login';
+// Welcome to Astro! Wondering what to do next? Check out the Astro documentation at https://docs.astro.build
+// Don't want to use any of this? Delete everything in this file, the `assets`, `components`, and `layouts` directories, and start fresh.
 ---
 
-<meta http-equiv="refresh" content={`0;url=${redirectTo}`} />
-
-<script>
-  // También redirigir mediante JavaScript por compatibilidad
-  const isAuthenticated = document.cookie.includes('auth='); // Ejemplo simple
-  const redirectTo = isAuthenticated ? '/dashboard' : '/login';
-  window.location.href = redirectTo;
-</script>
+<Layout>
+</Layout>

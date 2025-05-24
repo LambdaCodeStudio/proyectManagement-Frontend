@@ -1,0 +1,46 @@
+---
+import Layout from '../layouts/main/Layout.astro';
+import { Navbar } from '../components/common/Navbar';
+---
+
+<Layout title="Mis Deudas">
+  <Navbar client:load />
+  
+  <main class="max-w-7xl mx-auto py-6 sm:px-6 lg:px-8">
+    <div class="px-4 py-6 sm:px-0">
+      <div class="mb-8">
+        <h1 class="text-3xl font-bold text-gray-900 mb-2">
+          Mis Deudas
+        </h1>
+        <p class="text-gray-600">
+          Gestiona y paga tus deudas de forma segura y rápida
+        </p>
+      </div>
+
+      <div id="debts-dashboard">
+        <div class="animate-pulse space-y-6">
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div class="bg-white p-6 rounded-lg shadow h-32"></div>
+            <div class="bg-white p-6 rounded-lg shadow h-32"></div>
+            <div class="bg-white p-6 rounded-lg shadow h-32"></div>
+          </div>
+          <div class="bg-white rounded-lg shadow h-64"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script>
+    import { DebtsMain } from '../components/debts/DebtsMain';
+    import { createRoot } from 'react-dom/client';
+    import React from 'react';
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const container = document.getElementById('debts-dashboard');
+      if (container) {
+        const root = createRoot(container);
+        root.render(React.createElement(DebtsMain));
+      }
+    });
+  </script>
+</Layout>
