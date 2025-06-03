@@ -46,14 +46,79 @@ export const RegisterForm = () => {
     setIsLoading(true);
 
     try {
-      await api.post('/auth/register', {
+      console.log('🚀 Iniciando registro de usuario...');
+      
+      // El api.post ahora maneja automáticamente:
+      // - Obtención/validación de tokens CSRF
+      // - Reintentos automáticos si hay errores CSRF
+      // - Múltiples estrategias de autenticación
+      const response = await api.post('/auth/register', {
         email: formData.email,
         password: formData.password
       });
+      
+      console.log('✅ Registro exitoso:', response);
+      
+      // Redirigir a login con parámetro de éxito
       window.location.href = '/login?registered=true';
+      
     } catch (err: any) {
-      setError(err.response?.data?.msg || 'Error al registrar usuario');
+      console.error('❌ Error en registro:', err);
+      
       setIsLoading(false);
+      
+      // Manejar diferentes tipos de errores
+      if (err.response?.status === 400) {
+        // Error de validación del backend
+        setError(err.response?.data?.message || 'Los datos proporcionados no son válidos');
+      } else if (err.response?.status === 409) {
+        // Usuario ya existe
+        setError('Este correo electrónico ya está registrado');
+      } else if (err.response?.status === 422) {
+        // Errores de validación detallados
+        const errorMsg = err.response?.data?.message || 'Error de validación';
+        setError(errorMsg);
+      } else if (err.message?.includes('CSRF')) {
+        // Error específico de CSRF (aunque debería ser raro ahora)
+        setError('Error de seguridad. Por favor, recargue la página e intente nuevamente.');
+      } else if (err.message?.includes('conexión') || err.message?.includes('red')) {
+        // Error de red
+        setError('Error de conexión. Verifique su internet e intente nuevamente.');
+      } else {
+        // Error genérico
+        setError(
+          err.response?.data?.message || 
+          err.response?.data?.msg || 
+          err.message || 
+          'Error al registrar usuario. Intente nuevamente.'
+        );
+      }
+    }
+  };
+
+  const handleRetry = async () => {
+    try {
+      setError('🔄 Intentando renovar configuración de seguridad...');
+      
+      // Intentar diferentes estrategias CSRF
+      const headerType = await api.tryDifferentCsrfStrategies();
+      
+      if (headerType === 'BYPASS_MODE') {
+        setError('🛠️ Modo desarrollo activado. Intente registrarse nuevamente.');
+      } else if (headerType) {
+        setError(`✅ Configuración renovada (usando ${headerType}). Intente registrarse nuevamente.`);
+      } else {
+        // Si no se encontró una estrategia, intentar con el debugging completo
+        await api.debugCsrfConfig();
+        setError('✅ Configuración renovada. Intente registrarse nuevamente.');
+      }
+      
+      // Limpiar el error después de unos segundos
+      setTimeout(() => setError(''), 5000);
+      
+    } catch (err: any) {
+      console.error('Error al intentar estrategias CSRF:', err);
+      setError('❌ No se pudo renovar la configuración. Intente recargar la página.');
     }
   };
 
@@ -81,6 +146,7 @@ export const RegisterForm = () => {
             placeholder="Correo electrónico"
             icon={AtSign}
             error={error}
+            disabled={isLoading}
           />
 
           <InputField
@@ -92,6 +158,7 @@ export const RegisterForm = () => {
             error={error}
             showPasswordToggle
             onPasswordToggle={() => setShowPassword(!showPassword)}
+            disabled={isLoading}
           />
 
           <InputField
@@ -103,12 +170,33 @@ export const RegisterForm = () => {
             error={error}
             showPasswordToggle
             onPasswordToggle={() => setShowConfirmPassword(!showConfirmPassword)}
+            disabled={isLoading}
           />
         </div>
 
         {error && (
-          <div className="text-sm text-red-500 text-center bg-red-50 p-2 rounded-lg">
-            {error}
+          <div className={`text-sm p-3 rounded-lg ${
+            error.includes('✅') 
+              ? 'text-green-700 bg-green-50 border border-green-200' 
+              : error.includes('🔄')
+              ? 'text-blue-700 bg-blue-50 border border-blue-200'
+              : 'text-red-600 bg-red-50 border border-red-200'
+          }`}>
+            <div className="flex items-start justify-between">
+              <span className="flex-1">{error}</span>
+              
+              {/* Botón de reintento solo para errores específicos */}
+              {(error.includes('seguridad') || error.includes('CSRF') || error.includes('conexión')) && (
+                <button 
+                  type="button"
+                  onClick={handleRetry}
+                  className="ml-3 text-sm font-medium text-blue-600 hover:text-blue-800 underline flex-shrink-0"
+                  disabled={isLoading}
+                >
+                  Reintentar
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -122,13 +210,39 @@ export const RegisterForm = () => {
             hover:bg-blue-700 focus:outline-none focus:ring-2 
             focus:ring-offset-2 focus:ring-blue-500 transition-all
             duration-200 ease-in-out transform hover:-translate-y-0.5
-            disabled:opacity-50 disabled:cursor-not-allowed"
+            disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
         >
           <span className="flex items-center">
-            {isLoading ? 'Creando cuenta...' : 'Crear cuenta'}
-            {!isLoading && <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />}
+            {isLoading ? (
+              <>
+                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                Creando cuenta...
+              </>
+            ) : (
+              <>
+                Crear cuenta
+                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+              </>
+            )}
           </span>
         </button>
+        
+        {/* Botón de debugging solo en desarrollo */}
+        {process.env.NODE_ENV === 'development' && (
+          <button
+            type="button"
+            onClick={async () => {
+              console.log('🔧 Ejecutando debugging CSRF...');
+              await api.debugCsrfConfig();
+            }}
+            className="w-full text-sm text-gray-500 hover:text-gray-700 py-2"
+          >
+            🔧 Debug CSRF (Solo desarrollo)
+          </button>
+        )}
       </form>
     </AuthLayout>
   );
