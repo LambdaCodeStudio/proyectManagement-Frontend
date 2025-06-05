@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { AtSign, Lock, ArrowRight, Shield, CheckCircle, AlertCircle } from 'lucide-react';
-import { useAuth } from '../../hooks/useAuth'; // ← Usar el hook corregido
+import { useAuth } from '../../hooks/useAuth';
 
 export const LoginForm = () => {
   const [formData, setFormData] = useState({
@@ -39,7 +39,8 @@ export const LoginForm = () => {
       // Auto-hide success message after 5 seconds
       setTimeout(() => setShowSuccessMessage(false), 5000);
     }
-  }, [clearError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // ← Cambiado: array vacío, clearError se ejecuta solo cuando sea necesario
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

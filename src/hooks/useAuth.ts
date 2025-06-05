@@ -27,6 +27,13 @@ interface LoginResponse {
   };
 }
 
+interface GetUserResponse {
+  status: string;
+  data: {
+    user: User;
+  };
+}
+
 interface RegisterResponse {
   status: string;
   message: string;
@@ -111,6 +118,11 @@ export const useAuth = () => {
     error: null
   });
 
+  // Log inicial para debugging
+  useEffect(() => {
+    console.log('🔥 useAuth initialized with state:', auth);
+  }, []);
+
   // Función para normalizar datos de usuario (manejar diferentes estructuras)
   const normalizeUser = (userData: any): User => {
     // Manejar diferentes estructuras de respuesta del backend
@@ -158,12 +170,12 @@ export const useAuth = () => {
       console.log('🌐 Verificando token con servidor...');
       console.log('📡 Llamando a: /auth/me');
       
-      const data = await apiService.get('/auth/me');
-      console.log('✅ Respuesta del servidor recibida:', data);
+      const response = await apiService.get<GetUserResponse>('/auth/me');
+      console.log('✅ Respuesta del servidor recibida:', response);
       
-      // CRÍTICO: Verificar si la respuesta contiene datos de usuario
-      if (data && (data.user || (data.email && (data.userId || data.id)))) {
-        const normalizedUser = normalizeUser(data);
+      // CORREGIDO: Manejar la estructura correcta de la respuesta
+      if (response && response.status === 'success' && response.data && response.data.user) {
+        const normalizedUser = normalizeUser(response.data.user);
         console.log('👤 Usuario verificado:', normalizedUser.email);
         
         setAuth({
@@ -176,8 +188,8 @@ export const useAuth = () => {
         console.log('✅ Estado de autenticación actualizado exitosamente');
         return normalizedUser;
       } else {
-        console.warn('⚠️ Respuesta del servidor no contiene datos de usuario válidos:', data);
-        throw new Error('Respuesta del servidor inválida - faltan datos de usuario');
+        console.warn('⚠️ Respuesta del servidor no contiene estructura válida:', response);
+        throw new Error('Respuesta del servidor inválida - estructura inesperada');
       }
     } catch (error: any) {
       console.error('❌ Error verificando autenticación:', error);
@@ -241,20 +253,20 @@ export const useAuth = () => {
       console.log('🔐 === INICIANDO LOGIN ===', email);
       setAuth(prev => ({ ...prev, loading: true, error: null }));
       
-      const data = await apiService.post<LoginResponse>('/auth/login', { email, password });
-      console.log('📊 Respuesta del login:', data);
+      const response = await apiService.post<LoginResponse>('/auth/login', { email, password });
+      console.log('📊 Respuesta del login:', response);
       
       // CRÍTICO: Manejar la estructura real del backend
-      if (data.status === 'success' && data.data?.token) {
+      if (response.status === 'success' && response.data?.token) {
         console.log('✅ Login exitoso, guardando token...');
         
         // Guardar token
-        SecureCookies.set('token', data.data.token, { 
+        SecureCookies.set('token', response.data.token, { 
           maxAge: 86400 // 1 día
         });
         
         // Normalizar usuario
-        const normalizedUser = normalizeUser(data.data);
+        const normalizedUser = normalizeUser(response.data.user);
         console.log('✅ Usuario normalizado:', normalizedUser);
         
         setAuth({
@@ -267,7 +279,7 @@ export const useAuth = () => {
         console.log('✅ Estado establecido, login completado');
         return normalizedUser;
       } else {
-        console.error('❌ Respuesta de login inválida:', data);
+        console.error('❌ Respuesta de login inválida:', response);
         throw new Error('Respuesta inválida del servidor');
       }
     } catch (error: any) {
@@ -353,10 +365,15 @@ export const useAuth = () => {
   const updateProfile = async (profileData: Partial<User>): Promise<User> => {
     try {
       setAuth(prev => ({ ...prev, loading: true, error: null }));
-      const updatedUser = await apiService.put<User>('/auth/profile', profileData);
-      const normalizedUser = normalizeUser(updatedUser);
-      setAuth(prev => ({ ...prev, user: normalizedUser, loading: false }));
-      return normalizedUser;
+      const response = await apiService.put<GetUserResponse>('/auth/me', profileData);
+      
+      if (response.status === 'success' && response.data?.user) {
+        const normalizedUser = normalizeUser(response.data.user);
+        setAuth(prev => ({ ...prev, user: normalizedUser, loading: false }));
+        return normalizedUser;
+      } else {
+        throw new Error('Respuesta inválida del servidor');
+      }
     } catch (error: any) {
       setAuth(prev => ({ ...prev, loading: false, error: error.message }));
       throw error;
@@ -425,7 +442,15 @@ export const useAuth = () => {
     if (token) {
       console.log('🧪 Probando endpoint /auth/me...');
       apiService.get('/auth/me')
-        .then(data => console.log('✅ /auth/me exitoso:', data))
+        .then(data => {
+          console.log('✅ /auth/me exitoso:', data);
+          console.log('🔍 Estructura de respuesta:', {
+            hasStatus: !!data.status,
+            hasData: !!data.data,
+            hasUser: !!(data.data && data.data.user),
+            userEmail: data.data?.user?.email
+          });
+        })
         .catch(error => console.error('❌ /auth/me falló:', error));
     }
     
