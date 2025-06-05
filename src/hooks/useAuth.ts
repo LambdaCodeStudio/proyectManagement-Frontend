@@ -9,17 +9,22 @@ interface AuthState {
 }
 
 interface User {
-  userId: string;
+  userId?: string;
+  id?: string; // Algunos backends usan 'id' en lugar de 'userId'
   email: string;
   name?: string;
-  roles?: string[];
+  role?: string; // Singular
+  roles?: string[]; // Plural - para compatibilidad
   [key: string]: any;
 }
 
 interface LoginResponse {
   status: string;
-  user: User;
-  token: string;
+  message?: string;
+  data: {
+    token: string;
+    user: User;
+  };
 }
 
 interface RegisterResponse {
@@ -27,22 +32,37 @@ interface RegisterResponse {
   message: string;
 }
 
-// Clase de utilidad para manejo de cookies seguras
+// Clase de utilidad para manejo de cookies
 class SecureCookies {
   static get(name: string): string | undefined {
     if (typeof document === 'undefined') return undefined;
-    return document.cookie
-      .split('; ')
-      .find(row => row.startsWith(`${name}=`))
-      ?.split('=')[1];
+    
+    try {
+      const value = `; ${document.cookie}`;
+      const parts = value.split(`; ${name}=`);
+      if (parts.length === 2) {
+        const cookieValue = parts.pop()?.split(';').shift();
+        if (cookieValue) {
+          console.log(`🍪 Cookie ${name} encontrada:`, cookieValue.substring(0, 20) + '...');
+          return cookieValue;
+        }
+      }
+    } catch (error) {
+      console.error(`Error al leer cookie ${name}:`, error);
+    }
+    
+    console.log(`🍪 Cookie ${name} no encontrada`);
+    return undefined;
   }
 
   static set(name: string, value: string, options: { [key: string]: any } = {}): void {
     if (typeof document === 'undefined') return;
     
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    
     const cookieOptions = {
       path: '/',
-      secure: window.location.protocol === 'https:',
+      secure: !isLocal,
       sameSite: 'strict',
       ...options
     };
@@ -55,11 +75,31 @@ class SecureCookies {
     if (cookieOptions.sameSite) cookieString += `; samesite=${cookieOptions.sameSite}`;
     
     document.cookie = cookieString;
+    console.log(`🍪 Cookie ${name} guardada:`, value.substring(0, 20) + '...');
   }
 
   static delete(name: string): void {
     if (typeof document === 'undefined') return;
-    document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT; secure; samesite=strict`;
+    
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT${isLocal ? '' : '; secure'}; samesite=strict`;
+    console.log(`🗑️ Cookie ${name} eliminada`);
+  }
+
+  static debugAll(): void {
+    console.log('🔧 === DEBUG TODAS LAS COOKIES ===');
+    console.log('📄 document.cookie:', document.cookie);
+    
+    if (document.cookie) {
+      const cookies = document.cookie.split(';');
+      cookies.forEach((cookie, index) => {
+        const [name, value] = cookie.trim().split('=');
+        console.log(`🍪 ${index + 1}. ${name}:`, value?.substring(0, 30) + '...');
+      });
+    } else {
+      console.log('❌ No hay cookies disponibles');
+    }
+    console.log('🔧 === FIN DEBUG COOKIES ===');
   }
 }
 
@@ -71,12 +111,40 @@ export const useAuth = () => {
     error: null
   });
 
-  // Función para comprobar si hay sesión activa
+  // Función para normalizar datos de usuario (manejar diferentes estructuras)
+  const normalizeUser = (userData: any): User => {
+    // Manejar diferentes estructuras de respuesta del backend
+    const user = userData.user || userData;
+    
+    return {
+      userId: user.userId || user.id,
+      id: user.id || user.userId,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+      roles: user.roles || (user.role ? [user.role] : []), // Convertir role singular a array
+      ...user // Mantener otros campos
+    };
+  };
+
+  // Función para comprobar si hay sesión activa CORREGIDA
   const checkAuth = useCallback(async (silent: boolean = true) => {
-    if (typeof document === 'undefined') return;
+    console.log('🔍 === INICIANDO checkAuth ===', { silent });
+    
+    if (typeof document === 'undefined') {
+      console.log('❌ checkAuth: document no disponible (SSR)');
+      return;
+    }
+    
+    if (!silent) {
+      SecureCookies.debugAll();
+    }
     
     const token = SecureCookies.get('token');
+    console.log('🔑 Token encontrado:', token ? 'SÍ (' + token.substring(0, 20) + '...)' : 'NO');
+    
     if (!token) {
+      console.log('❌ No hay token, estableciendo estado no autenticado');
       setAuth({
         user: null,
         isAuthenticated: false,
@@ -87,34 +155,37 @@ export const useAuth = () => {
     }
     
     try {
-      // Verificar que el endpoint de health esté disponible
-      const isHealthy = await apiService.checkHealth();
-      if (!isHealthy && !silent) {
-        throw new Error('El servidor no está disponible en este momento');
+      console.log('🌐 Verificando token con servidor...');
+      console.log('📡 Llamando a: /auth/me');
+      
+      const data = await apiService.get('/auth/me');
+      console.log('✅ Respuesta del servidor recibida:', data);
+      
+      // CRÍTICO: Verificar si la respuesta contiene datos de usuario
+      if (data && (data.user || (data.email && (data.userId || data.id)))) {
+        const normalizedUser = normalizeUser(data);
+        console.log('👤 Usuario verificado:', normalizedUser.email);
+        
+        setAuth({
+          user: normalizedUser,
+          isAuthenticated: true,
+          loading: false,
+          error: null
+        });
+        
+        console.log('✅ Estado de autenticación actualizado exitosamente');
+        return normalizedUser;
+      } else {
+        console.warn('⚠️ Respuesta del servidor no contiene datos de usuario válidos:', data);
+        throw new Error('Respuesta del servidor inválida - faltan datos de usuario');
       }
-      
-      // Verificar sesión del usuario
-      const data = await apiService.get<{user: User}>('/api/auth/me');
-      
-      setAuth({
-        user: data.user,
-        isAuthenticated: true,
-        loading: false,
-        error: null
-      });
-      
-      return data.user;
     } catch (error: any) {
-      // Solo establecer error si no estamos en modo silencioso
-      if (!silent) {
-        setAuth(prev => ({
-          ...prev,
-          error: error.message || 'Error al verificar sesión'
-        }));
-      }
+      console.error('❌ Error verificando autenticación:', error);
       
-      // Limpiar datos de autenticación
+      // Limpiar datos de autenticación en caso de error
+      console.log('🗑️ Limpiando autenticación por error...');
       SecureCookies.delete('token');
+      
       setAuth({
         user: null,
         isAuthenticated: false,
@@ -123,53 +194,85 @@ export const useAuth = () => {
       });
       
       return null;
+    } finally {
+      console.log('🔍 === FIN checkAuth ===');
     }
   }, []);
 
   // Verificar autenticación al montar el componente
   useEffect(() => {
-    // Verificación inmediata
-    checkAuth(true);
+    console.log('🚀 useAuth: useEffect ejecutado');
+    
+    const initAuth = async () => {
+      console.log('⏳ Inicializando verificación de autenticación...');
+      await checkAuth(false); // false = mostrar todos los logs
+    };
+    
+    initAuth();
     
     // Verificar sesión periódicamente (cada 5 minutos)
     const interval = setInterval(() => {
-      // Solo verificar si estamos autenticados
       if (auth.isAuthenticated) {
+        console.log('🔄 Verificación periódica de sesión');
         checkAuth(true);
       }
     }, 5 * 60 * 1000);
     
-    // Limpiar interval al desmontar
-    return () => clearInterval(interval);
-  }, [checkAuth, auth.isAuthenticated]);
+    return () => {
+      console.log('🧹 Limpiando interval de useAuth');
+      clearInterval(interval);
+    };
+  }, []); // Dependency array vacío
 
-  // Función para iniciar sesión
+  // Log de cambios de estado para debugging
+  useEffect(() => {
+    console.log('📊 useAuth estado actualizado:', {
+      isAuthenticated: auth.isAuthenticated,
+      hasUser: !!auth.user,
+      userEmail: auth.user?.email,
+      loading: auth.loading,
+      error: auth.error
+    });
+  }, [auth]);
+
+  // Función para iniciar sesión CORREGIDA
   const login = async (email: string, password: string): Promise<User> => {
     try {
+      console.log('🔐 === INICIANDO LOGIN ===', email);
       setAuth(prev => ({ ...prev, loading: true, error: null }));
       
-      const data = await apiService.post<LoginResponse>('/api/auth/login', { email, password });
+      const data = await apiService.post<LoginResponse>('/auth/login', { email, password });
+      console.log('📊 Respuesta del login:', data);
       
-      if (data.status === 'success' && data.token) {
-        // Establecer cookie segura
-        SecureCookies.set('token', data.token, { 
-          maxAge: 86400, // 1 día
-          secure: true,
-          sameSite: 'strict'
+      // CRÍTICO: Manejar la estructura real del backend
+      if (data.status === 'success' && data.data?.token) {
+        console.log('✅ Login exitoso, guardando token...');
+        
+        // Guardar token
+        SecureCookies.set('token', data.data.token, { 
+          maxAge: 86400 // 1 día
         });
         
+        // Normalizar usuario
+        const normalizedUser = normalizeUser(data.data);
+        console.log('✅ Usuario normalizado:', normalizedUser);
+        
         setAuth({
-          user: data.user,
+          user: normalizedUser,
           isAuthenticated: true,
           loading: false,
           error: null
         });
         
-        return data.user;
+        console.log('✅ Estado establecido, login completado');
+        return normalizedUser;
       } else {
+        console.error('❌ Respuesta de login inválida:', data);
         throw new Error('Respuesta inválida del servidor');
       }
     } catch (error: any) {
+      console.error('❌ Error en login:', error.message);
+      
       setAuth(prev => ({ 
         ...prev, 
         loading: false,
@@ -182,17 +285,16 @@ export const useAuth = () => {
   // Función para cerrar sesión
   const logout = async (redirectUrl: string = '/login'): Promise<void> => {
     try {
+      console.log('👋 === INICIANDO LOGOUT ===');
       setAuth(prev => ({ ...prev, loading: true }));
       
-      // Llamar al endpoint de logout si existe
       try {
-        await apiService.post('/api/auth/logout');
+        await apiService.post('/auth/logout');
+        console.log('✅ Logout en servidor exitoso');
       } catch (error) {
-        // Continuar con el logout incluso si falla el backend
-        console.error('Error durante logout en el servidor:', error);
+        console.warn('⚠️ Error en logout del servidor:', error);
       }
       
-      // Limpiar datos del cliente
       SecureCookies.delete('token');
       
       setAuth({
@@ -202,23 +304,22 @@ export const useAuth = () => {
         error: null
       });
       
-      // Redirigir
+      console.log('✅ Logout completado');
+      
       if (typeof window !== 'undefined') {
         window.location.href = redirectUrl;
       }
     } catch (error: any) {
-      console.error('Error durante logout:', error);
+      console.error('❌ Error durante logout:', error);
       
-      // Asegurar que el usuario se desconecte incluso si hay error
       SecureCookies.delete('token');
       setAuth({
         user: null,
         isAuthenticated: false,
         loading: false,
-        error: error.message || 'Error durante el cierre de sesión'
+        error: null
       });
       
-      // Redirigir de todos modos
       if (typeof window !== 'undefined') {
         window.location.href = redirectUrl;
       }
@@ -228,9 +329,10 @@ export const useAuth = () => {
   // Función para registrar nuevo usuario
   const register = async (email: string, password: string, name?: string): Promise<RegisterResponse> => {
     try {
+      console.log('📝 Registrando usuario:', email);
       setAuth(prev => ({ ...prev, loading: true, error: null }));
       
-      const data = await apiService.post<RegisterResponse>('/api/auth/register', { 
+      const data = await apiService.post<RegisterResponse>('/auth/register', { 
         email, 
         password,
         name
@@ -248,95 +350,91 @@ export const useAuth = () => {
     }
   };
 
-  // Función para actualizar datos del usuario actual
   const updateProfile = async (profileData: Partial<User>): Promise<User> => {
     try {
       setAuth(prev => ({ ...prev, loading: true, error: null }));
-      
-      const updatedUser = await apiService.put<User>('/api/auth/profile', profileData);
-      
-      setAuth(prev => ({
-        ...prev,
-        user: updatedUser,
-        loading: false
-      }));
-      
-      return updatedUser;
+      const updatedUser = await apiService.put<User>('/auth/profile', profileData);
+      const normalizedUser = normalizeUser(updatedUser);
+      setAuth(prev => ({ ...prev, user: normalizedUser, loading: false }));
+      return normalizedUser;
     } catch (error: any) {
-      setAuth(prev => ({ 
-        ...prev, 
-        loading: false,
-        error: error.message || 'Error al actualizar perfil'
-      }));
+      setAuth(prev => ({ ...prev, loading: false, error: error.message }));
       throw error;
     }
   };
 
-  // Función para solicitar cambio de contraseña
   const forgotPassword = async (email: string): Promise<void> => {
     try {
       setAuth(prev => ({ ...prev, loading: true, error: null }));
-      
-      await apiService.post('/api/auth/forgot-password', { email });
-      
+      await apiService.post('/auth/forgot-password', { email });
       setAuth(prev => ({ ...prev, loading: false }));
     } catch (error: any) {
-      setAuth(prev => ({ 
-        ...prev, 
-        loading: false,
-        error: error.message || 'Error al solicitar cambio de contraseña'
-      }));
+      setAuth(prev => ({ ...prev, loading: false, error: error.message }));
       throw error;
     }
   };
 
-  // Función para establecer nueva contraseña
   const resetPassword = async (token: string, newPassword: string): Promise<void> => {
     try {
       setAuth(prev => ({ ...prev, loading: true, error: null }));
-      
-      await apiService.post('/api/auth/reset-password', { token, password: newPassword });
-      
+      await apiService.post('/auth/reset-password', { token, password: newPassword });
       setAuth(prev => ({ ...prev, loading: false }));
     } catch (error: any) {
-      setAuth(prev => ({ 
-        ...prev, 
-        loading: false,
-        error: error.message || 'Error al restablecer contraseña'
-      }));
+      setAuth(prev => ({ ...prev, loading: false, error: error.message }));
       throw error;
     }
   };
 
-  // Función para cambiar contraseña (usuario autenticado)
   const changePassword = async (currentPassword: string, newPassword: string): Promise<void> => {
     try {
       setAuth(prev => ({ ...prev, loading: true, error: null }));
-      
-      await apiService.post('/api/auth/change-password', { 
-        currentPassword, 
-        newPassword 
-      });
-      
+      await apiService.post('/auth/change-password', { currentPassword, newPassword });
       setAuth(prev => ({ ...prev, loading: false }));
     } catch (error: any) {
-      setAuth(prev => ({ 
-        ...prev, 
-        loading: false,
-        error: error.message || 'Error al cambiar contraseña'
-      }));
+      setAuth(prev => ({ ...prev, loading: false, error: error.message }));
       throw error;
     }
   };
 
-  // Función para limpiar estado de error
   const clearError = () => {
     setAuth(prev => ({ ...prev, error: null }));
   };
 
-  // Verificar si usuario tiene rol específico
   const hasRole = (role: string): boolean => {
-    return auth.user?.roles?.includes(role) || false;
+    if (!auth.user) return false;
+    
+    // Verificar en array de roles
+    if (auth.user.roles && auth.user.roles.includes(role)) return true;
+    
+    // Verificar rol singular
+    if (auth.user.role && auth.user.role === role) return true;
+    
+    return false;
+  };
+
+  const debugAuth = () => {
+    console.log('🔧 === DEBUG useAuth COMPLETO ===');
+    console.log('👤 Usuario:', auth.user);
+    console.log('🔐 Autenticado:', auth.isAuthenticated);
+    console.log('⏳ Cargando:', auth.loading);
+    console.log('❌ Error:', auth.error);
+    
+    SecureCookies.debugAll();
+    
+    const token = SecureCookies.get('token');
+    if (token) {
+      console.log('🧪 Probando endpoint /auth/me...');
+      apiService.get('/auth/me')
+        .then(data => console.log('✅ /auth/me exitoso:', data))
+        .catch(error => console.error('❌ /auth/me falló:', error));
+    }
+    
+    console.log('🔧 === FIN DEBUG ===');
+  };
+
+  const forceRecheck = () => {
+    console.log('🔄 Forzando nueva verificación de autenticación...');
+    checkAuth(false);
   };
 
   return {
@@ -353,6 +451,8 @@ export const useAuth = () => {
     resetPassword,
     changePassword,
     clearError,
-    hasRole
+    hasRole,
+    debugAuth,
+    forceRecheck
   };
 };

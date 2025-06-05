@@ -68,20 +68,28 @@ export const usePayments = () => {
 
   const createPaymentPreference = useCallback(async (debtId: string): Promise<PaymentPreference> => {
     try {
+      console.log('💳 === CREANDO PREFERENCIA DE PAGO ===', debtId);
       setLoading(true);
       setError(null);
 
       const response = await apiService.post<PaymentPreferenceResponse>(`/payments/preference/${debtId}`);
+      console.log('📊 Respuesta preferencia completa:', response);
       
-      if (response.status === 'success') {
+      // Manejar diferentes estructuras de respuesta
+      if (response.status === 'success' && response.data) {
+        console.log('✅ Preferencia creada exitosamente');
         return response.data;
+      } else if (response.status === 'success' && !response.data && response.preferenceId) {
+        // Si la respuesta tiene la preferencia directamente
+        console.log('✅ Preferencia en respuesta directa');
+        return response as any;
+      } else {
+        throw new Error(response.message || 'Error al crear preferencia de pago');
       }
-      
-      throw new Error(response.message || 'Error al crear preferencia de pago');
     } catch (err: any) {
       const errorMessage = err.message || 'Error al crear preferencia de pago';
+      console.error('❌ Error creando preferencia:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error creating payment preference:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -90,20 +98,27 @@ export const usePayments = () => {
 
   const getPayment = useCallback(async (paymentId: string): Promise<Payment> => {
     try {
+      console.log('🔍 === OBTENIENDO PAGO ===', paymentId);
       setLoading(true);
       setError(null);
 
       const response = await apiService.get<PaymentResponse>(`/payments/${paymentId}`);
+      console.log('📊 Respuesta pago completa:', response);
       
-      if (response.status === 'success') {
+      if (response.status === 'success' && response.data) {
+        console.log('✅ Pago obtenido exitosamente');
         return response.data;
+      } else if (response._id || response.id) {
+        // Si la respuesta tiene el pago directamente
+        console.log('✅ Pago en respuesta directa');
+        return response as any;
+      } else {
+        throw new Error('Error al obtener información del pago');
       }
-      
-      throw new Error('Error al obtener información del pago');
     } catch (err: any) {
       const errorMessage = err.message || 'Error al obtener el pago';
+      console.error('❌ Error obteniendo pago:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error fetching payment:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -117,6 +132,7 @@ export const usePayments = () => {
     limit?: number;
   } = {}): Promise<PaymentHistory> => {
     try {
+      console.log('📋 === OBTENIENDO HISTORIAL DE PAGOS ===', options);
       setLoading(true);
       setError(null);
 
@@ -130,15 +146,36 @@ export const usePayments = () => {
         `/payments?${params.toString()}`
       );
       
-      if (response.status === 'success') {
-        return response.data;
-      }
+      console.log('📊 Respuesta historial completa:', response);
       
-      throw new Error('Error al obtener historial de pagos');
+      // Manejar diferentes estructuras de respuesta
+      if (response.status === 'success' && response.data) {
+        console.log('✅ Historial obtenido exitosamente (estructura con data)');
+        return response.data;
+      } else if (response.payments && Array.isArray(response.payments)) {
+        // Si la respuesta tiene los pagos directamente
+        console.log('✅ Historial obtenido exitosamente (estructura directa)');
+        return {
+          payments: response.payments,
+          pagination: response.pagination || {
+            current: 1,
+            pages: 1,
+            total: response.payments.length,
+            limit: options.limit || 10
+          },
+          stats: response.stats || {
+            totalPayments: response.payments.length,
+            totalAmount: response.payments.reduce((sum: number, p: any) => sum + (p.amount || 0), 0),
+            stats: []
+          }
+        };
+      } else {
+        throw new Error('Error al obtener historial de pagos');
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'Error al obtener historial de pagos';
+      console.error('❌ Error obteniendo historial:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error fetching payment history:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -151,6 +188,7 @@ export const usePayments = () => {
     status?: string
   ): Promise<PaymentStatusResponse['data']> => {
     try {
+      console.log('🔍 === VERIFICANDO ESTADO DE PAGO ===', { externalReference, paymentId, status });
       setLoading(true);
       setError(null);
 
@@ -162,15 +200,25 @@ export const usePayments = () => {
         `/payments/status/check?${params.toString()}`
       );
       
-      if (response.status === 'success') {
-        return response.data;
-      }
+      console.log('📊 Respuesta estado completa:', response);
       
-      throw new Error('Error al verificar estado del pago');
+      if (response.status === 'success' && response.data) {
+        console.log('✅ Estado verificado exitosamente');
+        return response.data;
+      } else if (response.payment && response.debt) {
+        // Si la respuesta tiene los datos directamente
+        console.log('✅ Estado en respuesta directa');
+        return {
+          payment: response.payment,
+          debt: response.debt
+        };
+      } else {
+        throw new Error('Error al verificar estado del pago');
+      }
     } catch (err: any) {
       const errorMessage = err.message || 'Error al verificar el pago';
+      console.error('❌ Error verificando estado:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error checking payment status:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -179,16 +227,20 @@ export const usePayments = () => {
 
   const cancelPayment = useCallback(async (paymentId: string, reason?: string): Promise<boolean> => {
     try {
+      console.log('❌ === CANCELANDO PAGO ===', paymentId, reason);
       setLoading(true);
       setError(null);
 
       const response = await apiService.post(`/payments/${paymentId}/cancel`, { reason });
+      console.log('📊 Respuesta cancelación:', response);
       
-      return response.status === 'success';
+      const success = response.status === 'success';
+      console.log(success ? '✅ Pago cancelado' : '❌ Error cancelando pago');
+      return success;
     } catch (err: any) {
       const errorMessage = err.message || 'Error al cancelar el pago';
+      console.error('❌ Error cancelando pago:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error canceling payment:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -197,20 +249,26 @@ export const usePayments = () => {
 
   const retryPayment = useCallback(async (paymentId: string): Promise<PaymentPreference> => {
     try {
+      console.log('🔄 === REINTENTANDO PAGO ===', paymentId);
       setLoading(true);
       setError(null);
 
       const response = await apiService.post<PaymentPreferenceResponse>(`/payments/${paymentId}/retry`);
+      console.log('📊 Respuesta reintento:', response);
       
-      if (response.status === 'success') {
+      if (response.status === 'success' && response.data) {
+        console.log('✅ Reintento exitoso');
         return response.data;
+      } else if (response.preferenceId) {
+        // Si la respuesta tiene la preferencia directamente
+        return response as any;
+      } else {
+        throw new Error(response.message || 'Error al reintentar el pago');
       }
-      
-      throw new Error(response.message || 'Error al reintentar el pago');
     } catch (err: any) {
       const errorMessage = err.message || 'Error al reintentar el pago';
+      console.error('❌ Error reintentando pago:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error retrying payment:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -223,6 +281,7 @@ export const usePayments = () => {
     amount?: number
   ): Promise<boolean> => {
     try {
+      console.log('💰 === SOLICITANDO REEMBOLSO ===', { paymentId, reason, amount });
       setLoading(true);
       setError(null);
 
@@ -231,11 +290,14 @@ export const usePayments = () => {
         amount 
       });
       
-      return response.status === 'success';
+      console.log('📊 Respuesta reembolso:', response);
+      const success = response.status === 'success';
+      console.log(success ? '✅ Reembolso solicitado' : '❌ Error solicitando reembolso');
+      return success;
     } catch (err: any) {
       const errorMessage = err.message || 'Error al solicitar reembolso';
+      console.error('❌ Error solicitando reembolso:', errorMessage, err);
       setError(errorMessage);
-      console.error('Error requesting refund:', err);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -247,18 +309,33 @@ export const usePayments = () => {
       ? preference.sandboxInitPoint 
       : preference.initPoint;
     
+    console.log('🔄 === REDIRIGIENDO A MERCADOPAGO ===');
+    console.log('🌐 URL:', url);
+    console.log('🏷️ Preference ID:', preference.preferenceId);
+    
     if (url) {
-      window.location.href = url;
+      // Agregar parámetros adicionales para tracking
+      const urlWithParams = new URL(url);
+      urlWithParams.searchParams.append('source', 'webapp');
+      urlWithParams.searchParams.append('timestamp', Date.now().toString());
+      
+      console.log('✅ Redirigiendo a:', urlWithParams.toString());
+      window.location.href = urlWithParams.toString();
     } else {
-      throw new Error('URL de pago no disponible');
+      const error = 'URL de pago no disponible';
+      console.error('❌', error);
+      setError(error);
+      throw new Error(error);
     }
   }, []);
 
   const processPayment = useCallback(async (debtId: string): Promise<void> => {
     try {
+      console.log('💳 === PROCESANDO PAGO COMPLETO ===', debtId);
       const preference = await createPaymentPreference(debtId);
       redirectToMercadoPago(preference);
     } catch (err) {
+      console.error('❌ Error procesando pago:', err);
       throw err;
     }
   }, [createPaymentPreference, redirectToMercadoPago]);
@@ -297,6 +374,56 @@ export const usePayments = () => {
     return colorMap[status] || 'text-gray-600 bg-gray-100';
   }, []);
 
+  // Función para exportar datos a CSV
+  const exportToCSV = useCallback(async (filters: any = {}) => {
+    try {
+      console.log('📥 === EXPORTANDO A CSV ===', filters);
+      setLoading(true);
+      
+      // Obtener todos los pagos sin paginación
+      const allPayments = await getPaymentHistory({
+        ...filters,
+        limit: 1000 // Obtener hasta 1000 registros
+      });
+      
+      // Generar CSV
+      const headers = ['Fecha', 'Concepto', 'Monto', 'Estado', 'Método de Pago', 'ID Transacción'];
+      const csvContent = [
+        headers.join(','),
+        ...allPayments.payments.map(payment => [
+          new Date(payment.createdAt).toLocaleDateString('es-AR'),
+          `"${payment.debt?.description || 'N/A'}"`,
+          payment.amount,
+          formatPaymentStatus(payment.status),
+          payment.mercadopago?.paymentMethodId || 'N/A',
+          payment._id
+        ].join(','))
+      ].join('\n');
+      
+      // Descargar archivo
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `historial-pagos-${new Date().toISOString().split('T')[0]}.csv`;
+      link.click();
+      
+      console.log('✅ Archivo CSV descargado exitosamente');
+    } catch (err: any) {
+      console.error('❌ Error exportando CSV:', err);
+      setError('Error al exportar datos');
+    } finally {
+      setLoading(false);
+    }
+  }, [getPaymentHistory, formatPaymentStatus]);
+
+  // Función de debugging
+  const debugPayments = useCallback(() => {
+    console.log('🔧 === DEBUG usePayments ===');
+    console.log('⏳ Loading:', loading);
+    console.log('❌ Error:', error);
+    console.log('🔧 === FIN DEBUG ===');
+  }, [loading, error]);
+
   return {
     loading,
     error,
@@ -311,6 +438,8 @@ export const usePayments = () => {
     requestRefund,
     clearError,
     formatPaymentStatus,
-    getPaymentStatusColor
+    getPaymentStatusColor,
+    exportToCSV,
+    debugPayments
   };
 };

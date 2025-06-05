@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { AtSign, Lock, ArrowRight } from 'lucide-react';
-import { InputField, AuthLayout } from './shared/AuthComponents';
-import api from '../../services/api';
+import { AtSign, Lock, ArrowRight, Shield, CheckCircle, AlertCircle } from 'lucide-react';
+import { useAuth } from '../../hooks/useAuth'; // ← Usar el hook corregido
 
 export const LoginForm = () => {
   const [formData, setFormData] = useState({
@@ -10,8 +9,10 @@ export const LoginForm = () => {
     rememberMe: false
   });
   const [showPassword, setShowPassword] = useState(false);
-  const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [showSuccessMessage, setShowSuccessMessage] = useState(false);
+
+  // Usar el hook useAuth que ya corregimos
+  const { login, loading: isLoading, error, clearError, debugAuth } = useAuth();
 
   useEffect(() => {
     // Check for remembered credentials
@@ -33,32 +34,31 @@ export const LoginForm = () => {
     // Check for registration success message
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('registered') === 'true') {
-      setError(''); // Clear any errors
-      // You could show a success message here instead
+      setShowSuccessMessage(true);
+      clearError();
+      // Auto-hide success message after 5 seconds
+      setTimeout(() => setShowSuccessMessage(false), 5000);
     }
-  }, []);
+  }, [clearError]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    clearError();
+    setShowSuccessMessage(false);
 
     // Basic validation
     if (!formData.email || !formData.password) {
-      setError('Por favor ingresa tu correo electrónico y contraseña');
-      return;
+      return; // useAuth manejará la validación
     }
 
     // Email format validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(formData.email)) {
-      setError('Por favor ingresa un correo electrónico válido');
-      return;
+      return; // useAuth manejará la validación
     }
 
-    setIsLoading(true);
-
     try {
-      console.log('🚀 Iniciando sesión de usuario...');
+      console.log('🚀 Iniciando sesión con useAuth...');
       
       // Handle remember me functionality before login attempt
       if (formData.rememberMe) {
@@ -70,253 +70,277 @@ export const LoginForm = () => {
         localStorage.removeItem('rememberedUser');
       }
 
-      // Call login API - Note: NO '/api' prefix because baseURL already includes it
-      const response = await api.post('/auth/login', {
-        email: formData.email,
-        password: formData.password
-      });
+      // Usar el hook useAuth para login - esto manejará todo automáticamente
+      const user = await login(formData.email, formData.password);
+      
+      console.log('✅ Login exitoso con useAuth:', user.email);
 
-      console.log('✅ Login exitoso:', response);
-
-      // Handle successful login
-      if (response.token) {
-        // Store auth token (the api interceptor should handle this automatically)
-        console.log('🔐 Token de autenticación recibido');
-      }
-
-      // Handle user data
-      if (response.user) {
-        console.log('👤 Datos de usuario recibidos:', response.user.email);
-      }
-
-      // Redirect to dashboard
-      window.location.href = '/dashboard';
+      // Show brief success message before redirect
+      setShowSuccessMessage(true);
+      
+      console.log('🔄 Redirigiendo a dashboard en 1.5 segundos...');
+      
+      // Redirect to dashboard after a brief delay
+      setTimeout(() => {
+        window.location.href = '/dashboard';
+      }, 1500);
       
     } catch (err: any) {
-      console.error('❌ Error en login:', err);
+      console.error('❌ Error en login con useAuth:', err);
       
-      setIsLoading(false);
+      setShowSuccessMessage(false);
       
-      // Handle different types of errors
-      if (err.response?.status === 400) {
-        // Bad request - invalid credentials format
-        setError('Datos de inicio de sesión inválidos');
-      } else if (err.response?.status === 401) {
-        // Unauthorized - wrong credentials
-        setError('Correo electrónico o contraseña incorrectos');
-      } else if (err.response?.status === 403) {
-        // Forbidden - account issues
-        setError('Tu cuenta está bloqueada o suspendida. Contacta al soporte.');
-      } else if (err.response?.status === 404) {
-        // Not found - probably API endpoint issue
-        setError('Servicio de autenticación no disponible. Intenta más tarde.');
-      } else if (err.response?.status === 422) {
-        // Validation errors
-        const errorMsg = err.response?.data?.message || 'Error de validación en el servidor';
-        setError(errorMsg);
-      } else if (err.response?.status === 429) {
-        // Too many requests
-        setError('Demasiados intentos de inicio de sesión. Espera un momento antes de intentar de nuevo.');
-      } else if (err.message?.includes('conexión') || err.message?.includes('red') || err.message?.includes('Network')) {
-        // Network error
-        setError('Error de conexión. Verifique su internet e intente nuevamente.');
-      } else {
-        // Generic error
-        setError(
-          err.response?.data?.message || 
-          err.response?.data?.msg || 
-          err.message || 
-          'Error al iniciar sesión. Intente nuevamente.'
-        );
-      }
-
       // Clear password on error for security
       setFormData(prev => ({ ...prev, password: '' }));
+      
+      // El error ya está manejado por useAuth, solo necesitamos limpiar la contraseña
     }
   };
 
   const handleRetry = async () => {
-    try {
-      setError('🔄 Verificando conexión con el servidor...');
-      
-      // Test server connectivity
-      const isHealthy = await api.checkHealth();
-      if (isHealthy) {
-        setError('✅ Conexión con servidor OK. Intente iniciar sesión nuevamente.');
-      } else {
-        setError('❌ El servidor no está respondiendo. Intente más tarde.');
-      }
-      
-      // Clear the error after a few seconds
-      setTimeout(() => setError(''), 3000);
-      
-    } catch (err: any) {
-      setError('❌ No se pudo conectar con el servidor. Verifique su conexión.');
+    // Usar función de debug del useAuth
+    if (debugAuth) {
+      debugAuth();
     }
+    
+    // Limpiar error después de 3 segundos
+    setTimeout(() => clearError(), 3000);
   };
 
   const handleForgotPassword = () => {
-    // You can replace this with your actual forgot password logic
     window.location.href = '/forgot-password';
   };
 
   return (
-    <AuthLayout
-      title="Bienvenido de nuevo"
-      subtitle={
-        <span>
-          ¿No tienes una cuenta?{' '}
-          <a 
-            href="/register"
-            className="font-medium text-blue-600 hover:text-blue-500 transition-colors"
-          >
-            Regístrate aquí
-          </a>
-        </span>
-      }
-    >
-      <form onSubmit={handleSubmit} className="mt-8 space-y-6">
-        <div className="space-y-4">
-          <InputField
-            type="email"
-            value={formData.email}
-            onChange={(e) => setFormData({...formData, email: e.target.value})}
-            placeholder="Correo electrónico"
-            icon={AtSign}
-            error={error}
-            disabled={isLoading}
-            autoComplete="email"
-          />
-
-          <InputField
-            type={showPassword ? 'text' : 'password'}
-            value={formData.password}
-            onChange={(e) => setFormData({...formData, password: e.target.value})}
-            placeholder="Contraseña"
-            icon={Lock}
-            error={error}
-            showPasswordToggle
-            onPasswordToggle={() => setShowPassword(!showPassword)}
-            disabled={isLoading}
-            autoComplete="current-password"
-          />
-        </div>
-
-        {error && (
-          <div className={`text-sm p-3 rounded-lg ${
-            error.includes('✅') 
-              ? 'text-green-700 bg-green-50 border border-green-200' 
-              : error.includes('🔄')
-              ? 'text-blue-700 bg-blue-50 border border-blue-200'
-              : 'text-red-600 bg-red-50 border border-red-200'
-          }`}>
-            <div className="flex items-start justify-between">
-              <span className="flex-1">{error}</span>
-              
-              {/* Show retry button for connection/server errors */}
-              {(error.includes('conexión') || error.includes('servidor') || error.includes('disponible')) && (
-                <button 
-                  type="button"
-                  onClick={handleRetry}
-                  className="ml-3 text-sm font-medium text-blue-600 hover:text-blue-800 underline flex-shrink-0"
-                  disabled={isLoading}
-                >
-                  Reintentar
-                </button>
-              )}
-            </div>
+    <div className="min-h-screen gradient-bg flex items-center justify-center px-4 py-12">
+      <div className="max-w-md w-full">
+        {/* Logo/Header */}
+        <div className="text-center mb-8">
+          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl gradient-purple mb-4">
+            <span className="text-2xl font-bold text-white">Λ</span>
           </div>
-        )}
-
-        <div className="flex items-center justify-between">
-          <div className="flex items-center">
-            <input
-              id="remember-me"
-              name="remember-me"
-              type="checkbox"
-              checked={formData.rememberMe}
-              onChange={(e) => setFormData({...formData, rememberMe: e.target.checked})}
-              disabled={isLoading}
-              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded disabled:opacity-50"
-            />
-            <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900">
-              Recuérdame
-            </label>
-          </div>
-
-          <div className="text-sm">
-            <button
-              type="button"
-              onClick={handleForgotPassword}
-              className="font-medium text-blue-600 hover:text-blue-500 transition-colors disabled:opacity-50"
-              disabled={isLoading}
+          <h1 className="text-3xl font-bold text-white mb-2">Bienvenido de nuevo</h1>
+          <p className="text-gray-300">
+            ¿No tienes una cuenta?{' '}
+            <a 
+              href="/register"
+              className="font-medium text-blue-400 hover:text-blue-300 transition-colors"
             >
-              ¿Olvidaste tu contraseña?
-            </button>
-          </div>
+              Regístrate aquí
+            </a>
+          </p>
         </div>
 
-        <button
-          type="submit"
-          disabled={isLoading || !formData.email || !formData.password}
-          className="group relative w-full flex justify-center py-3 px-4 
-            border border-transparent rounded-lg text-white bg-blue-600 
-            hover:bg-blue-700 focus:outline-none focus:ring-2 
-            focus:ring-offset-2 focus:ring-blue-500 transition-all
-            duration-200 ease-in-out transform hover:-translate-y-0.5
-            disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
-        >
-          <span className="flex items-center">
-            {isLoading ? (
-              <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
-                Iniciando sesión...
-              </>
-            ) : (
-              <>
-                Iniciar Sesión
-                <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
-              </>
-            )}
-          </span>
-        </button>
+        {/* Main Form Card */}
+        <div className="gradient-card rounded-2xl p-8 card-hover">
+          {/* Success Message */}
+          {showSuccessMessage && (
+            <div className="mb-6 p-4 rounded-xl bg-green-500/20 border border-green-500/30 backdrop-blur-sm">
+              <div className="flex items-center space-x-3">
+                <CheckCircle className="w-5 h-5 text-green-400 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-green-300 text-sm font-medium">
+                    ¡Inicio de sesión exitoso! Redirigiendo al dashboard...
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
-        {/* Debug section for development */}
-        {process.env.NODE_ENV === 'development' && (
-          <div className="mt-4 pt-4 border-t border-gray-200">
-            <details className="text-sm text-gray-500">
-              <summary className="cursor-pointer hover:text-gray-700">🔧 Debug (Solo desarrollo)</summary>
-              <div className="mt-2 space-y-2">
+          <form onSubmit={handleSubmit} className="space-y-6">
+            {/* Email Field */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-300">
+                Correo electrónico
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <AtSign className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({...formData, email: e.target.value})}
+                  placeholder="tu@email.com"
+                  disabled={isLoading}
+                  autoComplete="email"
+                  className={`w-full pl-10 pr-4 py-3 bg-white/10 border rounded-xl text-white placeholder-gray-400 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                    transition-all duration-200 disabled:opacity-50
+                    ${error && !showSuccessMessage ? 'border-red-500/50' : 'border-white/20 hover:border-white/30'}`}
+                  required
+                />
+              </div>
+            </div>
+
+            {/* Password Field */}
+            <div className="space-y-2">
+              <label className="block text-sm font-medium text-gray-300">
+                Contraseña
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-gray-400" />
+                </div>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={formData.password}
+                  onChange={(e) => setFormData({...formData, password: e.target.value})}
+                  placeholder="••••••••"
+                  disabled={isLoading}
+                  autoComplete="current-password"
+                  className={`w-full pl-10 pr-12 py-3 bg-white/10 border rounded-xl text-white placeholder-gray-400 
+                    focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent
+                    transition-all duration-200 disabled:opacity-50
+                    ${error && !showSuccessMessage ? 'border-red-500/50' : 'border-white/20 hover:border-white/30'}`}
+                  required
+                />
                 <button
                   type="button"
-                  onClick={async () => {
-                    console.log('🔧 Verificando salud del servidor...');
-                    const isHealthy = await api.checkHealth();
-                    console.log('🏥 Estado del servidor:', isHealthy ? 'OK' : 'ERROR');
-                  }}
-                  className="block w-full text-left px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
+                  onClick={() => setShowPassword(!showPassword)}
+                  disabled={isLoading}
+                  className="absolute inset-y-0 right-0 pr-3 flex items-center hover:text-gray-300 transition-colors"
                 >
-                  Test conexión servidor
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    console.log('📋 Datos del formulario:', formData);
-                    console.log('📍 URL base API:', api.defaults?.baseURL);
-                  }}
-                  className="block w-full text-left px-2 py-1 bg-gray-100 hover:bg-gray-200 rounded"
-                >
-                  Ver datos del formulario
+                  {showPassword ? (
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.875 18.825A10.05 10.05 0 0112 19c-4.478 0-8.268-2.943-9.543-7a9.97 9.97 0 011.563-3.029m5.858.908a3 3 0 114.243 4.243M9.878 9.878l4.242 4.242M9.878 9.878L3 3m6.878 6.878L21 21" />
+                    </svg>
+                  ) : (
+                    <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+                    </svg>
+                  )}
                 </button>
               </div>
-            </details>
+            </div>
+
+            {/* Error Message */}
+            {error && !showSuccessMessage && (
+              <div className="p-4 rounded-xl bg-red-500/20 border border-red-500/30 backdrop-blur-sm">
+                <div className="flex items-start space-x-3">
+                  <AlertCircle className="w-5 h-5 text-red-400 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-red-300 text-sm">{error}</p>
+                    <button 
+                      type="button"
+                      onClick={handleRetry}
+                      className="mt-2 text-sm font-medium text-red-200 hover:text-red-100 underline transition-colors"
+                      disabled={isLoading}
+                    >
+                      Debug información de autenticación
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Remember Me & Forgot Password */}
+            <div className="flex items-center justify-between">
+              <label className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  id="remember-me"
+                  name="remember-me"
+                  type="checkbox"
+                  checked={formData.rememberMe}
+                  onChange={(e) => setFormData({...formData, rememberMe: e.target.checked})}
+                  disabled={isLoading}
+                  className="w-4 h-4 rounded border-gray-600 bg-white/10 text-blue-500 focus:ring-blue-500 focus:ring-offset-0 disabled:opacity-50"
+                />
+                <span className="text-sm text-gray-300">Recuérdame</span>
+              </label>
+
+              <button
+                type="button"
+                onClick={handleForgotPassword}
+                className="text-sm font-medium text-blue-400 hover:text-blue-300 transition-colors disabled:opacity-50"
+                disabled={isLoading}
+              >
+                ¿Olvidaste tu contraseña?
+              </button>
+            </div>
+
+            {/* Submit Button */}
+            <button
+              type="submit"
+              disabled={isLoading || !formData.email || !formData.password}
+              className="group relative w-full flex justify-center items-center py-3 px-4 
+                rounded-xl text-white font-medium gradient-purple
+                hover:opacity-90 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-transparent
+                transition-all duration-200 ease-in-out transform hover:-translate-y-0.5
+                disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none"
+            >
+              {isLoading ? (
+                <>
+                  <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                  </svg>
+                  {showSuccessMessage ? 'Redirigiendo...' : 'Iniciando sesión...'}
+                </>
+              ) : (
+                <>
+                  Iniciar Sesión
+                  <ArrowRight className="ml-2 h-5 w-5 group-hover:translate-x-1 transition-transform" />
+                </>
+              )}
+            </button>
+          </form>
+
+          {/* Security Badge */}
+          <div className="mt-6 pt-6 border-t border-white/10">
+            <div className="flex items-center justify-center space-x-2 text-gray-400">
+              <Shield className="w-4 h-4" />
+              <span className="text-xs">Conexión segura y cifrada</span>
+            </div>
           </div>
-        )}
-      </form>
-    </AuthLayout>
+
+          {/* Debug section for development */}
+          {import.meta.env.DEV && (
+            <div className="mt-6 pt-6 border-t border-white/10">
+              <details className="text-sm text-gray-400">
+                <summary className="cursor-pointer hover:text-gray-300 flex items-center space-x-2">
+                  <span>🔧 Debug (Solo desarrollo)</span>
+                </summary>
+                <div className="mt-3 space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (debugAuth) {
+                        debugAuth();
+                      } else {
+                        console.log('📋 Datos del formulario:', formData);
+                        console.log('🍪 Cookies actuales:', document.cookie);
+                      }
+                    }}
+                    className="block w-full text-left px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-xs"
+                  >
+                    Debug autenticación completo
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      console.log('📋 Estado useAuth:', { isLoading, error });
+                      console.log('📋 Datos del formulario:', formData);
+                    }}
+                    className="block w-full text-left px-3 py-2 bg-white/5 hover:bg-white/10 rounded-lg transition-colors text-xs"
+                  >
+                    Ver estado actual
+                  </button>
+                </div>
+              </details>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="text-center mt-8">
+          <p className="text-xs text-gray-400">
+            © 2025 Lambda Code Studio. Todos los derechos reservados.
+          </p>
+        </div>
+      </div>
+    </div>
   );
 };
 
